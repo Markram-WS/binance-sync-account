@@ -1,0 +1,10 @@
+[package]
+name = "binance-sync-account"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+axum = "0.8.6"
+base64 = "0.22.1"
+sqlx = { version = "0.8.6", features = ["runtime-tokio-rustls", "postgres", "macros", "uuid", "chrono"] }
+tokio = { version = "1.46.0", features = ["full"] }
