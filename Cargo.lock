@@ -138,6 +138,10 @@ version = "0.1.0"
 dependencies = [
  "axum",
  "base64",
+ "hex",
+ "hmac",
+ "serde_urlencoded",
+ "sha2",
  "sqlx",
  "tokio",
 ]

@@ -2,21 +2,33 @@ use axum::http::HeaderValue;
 use reqwest::Client;
 use std::error::Error;
 use chrono::Utc;
-use lib::utils::{get_env_decode,get_env};
+use std::time::{SystemTime, UNIX_EPOCH};
 
-async fn account_info() -> Result<(), Box<dyn Error>> {
+use lib::utils::{get_env_decode,get_env,create_signature};
+
+pub async fn account_info() -> Result<(), Box<dyn Error>> {
     let api_host = get_env("API_HOST");
     let api_secret = get_env("API_SECRET");
     let api_key = get_env("API_KEY");
-    let url = format("{}/api/v3/account?timestamp=&signature=",api_host);
+
+    let timestamp: String = SystemTime::now()
+    .duration_since(UNIX_EPOCH)
+    .expect("time went backwards")
+    .as_millis()
+    .to_string();
+
+    let params: Vec<(&str, String)> = vec![
+            ("omitZeroBalances", "false".to_string()),
+            ("recvWindow", "60000".to_string()),
+            ("timestamp", timestamp.copy())
+    ];
+
+    let query_string = serde_urlencoded::to_string(&params).expect("urlencode failed");
+    let url = format!("https://{}/api/v3/account?{}&signature={}", api_host,query_string, signature);
 
     let client = Client::new();
-    let timestamp = Utc::now().timestamp_millis();
-    let signature = "aaaaaa";
-
     let res = client
-        .get(url)
-        .query(&[("timestamp", timestamp), ("signature", signature)])
+        .get(&url)
         .header("X-MBX-APIKEY", "xxxxx") // ใส่ API key
         .header("Accept", "application/json")
         .send()
