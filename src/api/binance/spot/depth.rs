@@ -28,19 +28,42 @@ impl<'a> Params<'a> {
     }
 }
 
-pub async fn depth<'a>(payload:Params<'a>) -> Result<reqwest::Response , Box<dyn Error>> {
+
+use serde::Deserialize;
+#[derive(Debug, Deserialize)]
+pub struct OrderBook {
+    #[serde(rename = "lastUpdateId")]
+    pub last_update_id: u64,
+    pub bids: Vec<[String; 2]>, // [price, qty]
+    pub asks: Vec<[String; 2]>,
+}
+
+
+pub async fn depth<'a>(payload: Params<'a>) -> Result<OrderBook, Box<dyn std::error::Error>> {
     let api_host = get_env("API_HOST");
     let api_key = get_env("API_KEY");
     let query_string = serde_urlencoded::to_string(&payload.to_pairs())?;
-    let url = format!("{}/api/v3/depth?{}", api_host,query_string, );
-    let client = Client::new();
+    let url = format!("{}/api/v3/depth?{}", api_host, query_string);
+    let client = reqwest::Client::new();
+
     let res = client
         .get(&url)
-        .header("X-MBX-APIKEY", &api_key) 
+        .header("X-MBX-APIKEY", &api_key)
         .header("Accept", "application/json")
         .send()
         .await?;
-    Ok(res)
+
+    let status = res.status();
+    let text = res.text().await?;
+    //println!("{} : {}", status.as_u16(), status.as_str());
+
+    if status.is_success() {
+        let ob: OrderBook = serde_json::from_str(&text)?;
+        Ok(ob)
+    } else {
+        let err = format!("API error {}: {}", status.as_u16(), status.as_str());
+        Err(err.into())
+    }
 }
 
 #[cfg(test)]
@@ -71,14 +94,11 @@ mod tests {
         };
         let payload = Params::new("BTCUSDT");
         println!("{:?}", &payload);
-        let res: reqwest::Response = depth(payload).await.expect("fn error");
-        let status = res.status();
-
-        if !status.is_success() {
-            let body = res.text().await.expect("Failed to read body");
-            println!("{}", body);
+        match depth(payload).await {
+            Ok(res) => assert_eq!(200, 200),
+            Err(e) => panic!("API error: {}", e),
         }
+        
 
-        assert_eq!(status.as_u16(), 200);
     }
 }

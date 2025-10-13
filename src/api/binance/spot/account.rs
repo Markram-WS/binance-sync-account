@@ -29,7 +29,58 @@ impl Params {
     }
 }
 
-pub async fn account_info(payload:Params) -> Result<reqwest::Response , Box<dyn Error>> {
+use serde::{Deserialize, Serialize};
+#[derive(Debug, Serialize, Deserialize)]
+pub struct AccountInfo {
+    #[serde(rename = "makerCommission")]
+    pub maker_commission: u32,
+    #[serde(rename = "takerCommission")]
+    pub taker_commission: u32,
+    #[serde(rename = "buyerCommission")]
+    pub buyer_commission: u32,
+    #[serde(rename = "sellerCommission")]
+    pub seller_commission: u32,
+    #[serde(rename = "commissionRates")]
+    pub commission_rates: CommissionRates,
+    #[serde(rename = "canTrade")]
+    pub can_trade: bool,
+    #[serde(rename = "canWithdraw")]
+    pub can_withdraw: bool,
+    #[serde(rename = "canDeposit")]
+    pub can_deposit: bool,
+    #[serde(rename = "brokered")]
+    pub brokered: bool,
+    #[serde(rename = "requireSelfTradePrevention")]
+    pub require_self_trade_prevention: bool,
+    #[serde(rename = "preventSor")]
+    pub prevent_sor: bool,
+    #[serde(rename = "updateTime")]
+    pub update_time: u64,
+    #[serde(rename = "lastUpdateId")]
+    pub account_type: String,
+    pub balances: Vec<Balance>,
+    pub permissions: Vec<String>,
+    pub uid: u64,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct CommissionRates {
+    pub maker: String,
+    pub taker: String,
+    pub buyer: String,
+    pub seller: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct Balance {
+    pub asset: String,
+    pub free: String,
+    pub locked: String,
+}
+
+
+
+pub async fn account_info(payload:Params) -> Result< AccountInfo, Box<dyn Error>> {
     let api_host = get_env("API_HOST");
     let api_secret = get_env("API_SECRET");
     let api_key = get_env("API_KEY");
@@ -46,7 +97,15 @@ pub async fn account_info(payload:Params) -> Result<reqwest::Response , Box<dyn 
         .header("Accept", "application/json")
         .send()
         .await?;
-    Ok(res)
+    let status = res.status();
+    let text = res.text().await?;
+    if status.is_success() {
+        let ob: AccountInfo = serde_json::from_str(&text)?;
+        Ok(ob)
+    } else {
+        let err = format!("API error {}: {}", status.as_u16(), status.as_str());
+        Err(err.into())
+    }
 }
 
 #[cfg(test)]
@@ -77,14 +136,9 @@ mod tests {
 
         };
         let payload = Params::new();
-        let res: reqwest::Response = account_info(payload).await.expect("fn error");
-        let status = res.status();
-
-        if !status.is_success() {
-            let body = res.text().await.expect("Failed to read body");
-            println!("{}", body);
+        match account_info(payload).await {
+            Ok(res) => assert_eq!(200, 200),
+            Err(e) => panic!("API error: {}", e),
         }
-
-        assert_eq!(status.as_u16(), 200);
     }
 }
