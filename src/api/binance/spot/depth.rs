@@ -1,7 +1,4 @@
-use reqwest::Client;
-use std::error::Error;
-use std::time::{SystemTime, UNIX_EPOCH};
-use crate::utils::{get_env,create_signature};
+use crate::utils::{get_env};
 
 #[derive(Debug)]
 pub struct Params<'a> {
@@ -93,9 +90,12 @@ mod tests {
 
         };
         let payload = Params::new("BTCUSDT");
-        println!("{:?}", &payload);
+        println!("payload : {:?}", &payload);
         match depth(payload).await {
-            Ok(res) => assert_eq!(200, 200),
+            Ok(res) => {
+                println!("response : {:?}",res);
+                assert_eq!(200, 200);
+            },
             Err(e) => panic!("API error: {}", e),
         }
         

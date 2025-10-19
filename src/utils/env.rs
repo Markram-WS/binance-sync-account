@@ -29,10 +29,10 @@ mod tests {
 
     
     #[test]
-    #[should_panic(expected = "`Err` value: NotPresent")]
+    #[should_panic(expected = "missing: NotPresent")]
     fn test_utils_get_env_missing() {
         unsafe {env::remove_var("MISSING_KEY")};
-        assert_eq!(get_env("EXISING_KEY"), "True");
+        assert_eq!(get_env("MISSING_KEY"), "True");
     }
 
     //get_env_decode
@@ -43,7 +43,7 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "`Err` value: NotPresent")]
+    #[should_panic(expected = "missing: NotPresent")]
     fn test_utils_get_env_decode_missing() {
         unsafe { env::remove_var("MISSING_KEY") };
         assert_eq!(get_env_decode("MISSING_KEY"), "True");
@@ -51,7 +51,7 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "`Err` value: InvalidByte")] 
+    #[should_panic(expected = "Failed to decode base64")] 
     fn test_utils_get_env_decode_invalid_base64() {
         unsafe { env::set_var("BAD_BASE64", "not_base64!") };
         assert_eq!(get_env_decode("BAD_BASE64"), "True");

@@ -56,7 +56,7 @@ pub struct AccountInfo {
     pub prevent_sor: bool,
     #[serde(rename = "updateTime")]
     pub update_time: u64,
-    #[serde(rename = "lastUpdateId")]
+    #[serde(rename = "accountType")]
     pub account_type: String,
     pub balances: Vec<Balance>,
     pub permissions: Vec<String>,
@@ -137,7 +137,10 @@ mod tests {
         };
         let payload = Params::new();
         match account_info(payload).await {
-            Ok(res) => assert_eq!(200, 200),
+            Ok(res) => {
+                println!("response : {:?}",res);
+                assert_eq!(200, 200);
+            },
             Err(e) => panic!("API error: {}", e),
         }
     }
