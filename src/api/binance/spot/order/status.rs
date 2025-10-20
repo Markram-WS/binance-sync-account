@@ -39,22 +39,20 @@ impl<'a> Params<'a> {
 use serde::{Deserialize, Serialize};
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Order {
-    pub symbol: String,
+    #[serde(rename = "symbol")]
+    pub symbol: i32,
     #[serde(rename = "orderId")]
     pub order_id: i32,
     #[serde(rename = "orderListId")]
-    pub order_list_id: i32,
+    pub order_list_id: i8,
     #[serde(rename = "clientOrderId")]
-    pub client_order_id: String,
-    #[serde(rename = "transactTime")]
-    pub transact_time: i64,
+    pub client_order_id: i64,
+    #[serde(rename = "price")]
     pub price: f64,
     #[serde(rename = "origQty")]
     pub orig_oty: f64,
     #[serde(rename = "executedQty")]
     pub executed_qty: f64,
-    #[serde(rename = "origQuoteOrderQty")]
-    pub orig_quote_order_qty: f64,
     #[serde(rename = "cummulativeQuoteQty")]
     pub cummulative_quote_qty: f64,
     #[serde(rename = "status")]
@@ -65,27 +63,39 @@ pub struct Order {
     pub order_type: String,
     #[serde(rename = "side")]
     pub side: String,
+    #[serde(rename = "stopPrice")]
+    pub stop_price: f64,
+    #[serde(rename = "icebergQty")]
+    pub iceberg_qty : f64,
+    #[serde(rename = "time")]
+    pub time : i64,
+    #[serde(rename = "updateTime")]
+    pub update_time : i64,
+    #[serde(rename = "isWorking")]
+    pub is_working : bool,
     #[serde(rename = "workingTime")]
-    pub working_time: String,
+    pub working_time : i64,
+    #[serde(rename = "origQuoteOrderQty")]
+    pub orig_quote_order_qty : String,
     #[serde(rename = "selfTradePreventionMode")]
-    pub self_tade_prevention_mode : String
+    pub self_trade_prevention_mode : String,
 }
 
 
-pub async fn cancel<'a>(payload: Params<'a>)  -> Result< Order, Box<dyn Error>> {
+pub async fn status<'a>(payload: Params<'a>)  -> Result< Order, Box<dyn Error>> {
     let api_host = get_env("API_HOST");
     let api_secret = get_env("API_SECRET");
     let api_key = get_env("API_KEY");
     let query_string = serde_urlencoded::to_string(&payload.to_pairs())?;
     let signature: String = create_signature(&payload.to_pairs(),&api_secret)?;
-    let url = format!("{}/api/v3/order/test?{}&signature={}", api_host, query_string, signature);
+    let url = format!("{}/api/v3/order?{}&signature={}", api_host, query_string, signature);
 
 
     let client = Client::new();
 
     //println!("{}",&url);
     let res = client
-        .delete(&url)
+        .get(&url)
         .header("X-MBX-APIKEY", &api_key) 
         .header("Accept", "application/json")
         .send()
@@ -118,7 +128,7 @@ mod tests {
 
     //get_env
     #[tokio::test]
-    async  fn test_api_binance_spot_order_cancel(){
+    async  fn test_api_binance_spot_get_order_status(){
         init();
         let api_key = get_env("API_KEY_TEST");
         let api_secret_test = get_env("API_SECRET_TEST");
@@ -131,7 +141,7 @@ mod tests {
         let payload = Params::new(&"BTCUSDT",&100000000i64);
         
         println!("payload : {:?}", &payload);
-        match cancel(payload).await {
+        match status(payload).await {
             Ok(res) => {
                 println!("response : {:?}",res);
                 assert_eq!(200, 200);

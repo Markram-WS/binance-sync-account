@@ -228,7 +228,7 @@ mod tests {
 
     //get_env
     #[tokio::test]
-    async  fn test_api_binance_spot_create_order(){
+    async  fn test_api_binance_spot_order_create(){
         init();
         let api_key = get_env("API_KEY_TEST");
         let api_secret_test = get_env("API_SECRET_TEST");

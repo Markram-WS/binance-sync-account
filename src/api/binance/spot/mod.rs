@@ -1,6 +1,6 @@
 
 mod order;
-pub use order::{create};
+pub use order::{create,cancel,status,opened};
 
 mod klines;
 pub use klines::{klines};
