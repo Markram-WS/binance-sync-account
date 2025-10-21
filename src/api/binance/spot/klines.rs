@@ -57,21 +57,21 @@ pub struct Params<'a> {
 
 impl<'a> Params<'a> {
     #[allow(dead_code)]
-    fn new(symbol: &'a str,interval: &'a Interval,start_time: &'a i64,end_time: &'a i64) -> Self {
+    pub fn new(symbol: &'a str,interval: &'a Interval,start_time: &'a i64,end_time: &'a i64) -> Self {
         Self { symbol,interval, start_time, end_time,time_zone:"0", limit: "100"  } 
     }
     #[allow(dead_code)]
-    fn time_zone(mut self, time_zone: &'a str) -> Self {
+    pub fn time_zone(mut self, time_zone: &'a str) -> Self {
         self.time_zone = time_zone;
         self
     }
     #[allow(dead_code)]
-    fn limit(mut self, limit: &'a str) -> Self {
+    pub fn limit(mut self, limit: &'a str) -> Self {
         self.limit = limit;
         self
     }
     #[allow(dead_code)]
-   fn to_pairs(&self) -> Vec<(&str, String)> {
+    pub fn to_pairs(&self) -> Vec<(&str, String)> {
         vec![
             ("symbol", self.symbol.to_string()),
             ("interval", self.interval.as_str().to_string()),
@@ -133,7 +133,7 @@ impl From<RawKline> for Kline {
         }
     }
 }
-pub async fn klines<'a>(payload: Params<'a>) -> Result<Vec<Kline>, Box<dyn std::error::Error>> {
+pub async fn get_klines<'a>(payload: Params<'a>) -> Result<Vec<Kline>, Box<dyn std::error::Error>> {
     let api_host = get_env("API_HOST");
     let api_key = get_env("API_KEY");
     let query_string = serde_urlencoded::to_string(&payload.to_pairs())?;
@@ -156,7 +156,7 @@ pub async fn klines<'a>(payload: Params<'a>) -> Result<Vec<Kline>, Box<dyn std::
         let klines: Vec<Kline> = raw_klines.into_iter().map(Kline::from).collect();
         Ok(klines)
     } else {
-        let err = format!("API error {}: {}", status.as_u16(), status.as_str());
+        let err = format!("status {} : {}", status.as_u16(), text);
         Err(err.into())
     }
 }
@@ -191,7 +191,7 @@ mod tests {
         };
         let payload = Params::new("BTCUSDT",&Interval::Days1,&1759251600000i64,&1760029200000i64);
         println!("payload : {:?}", &payload);
-        match klines(payload).await {
+        match get_klines(payload).await {
             Ok(res) => {
                 println!("response : {:?}",res);
                 assert_eq!(200, 200);

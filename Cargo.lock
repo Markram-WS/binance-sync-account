@@ -139,28 +139,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "55248b47b0caf0546f7988906588779981c43bb1bc9d0c44087278f80cdb44ba"
 
 [[package]]
-name = "binance-sync-account"
-version = "0.1.0"
-dependencies = [
- "axum",
- "base64 0.21.7",
- "chrono",
- "dotenvy",
- "ed25519-dalek",
- "hex",
- "hmac",
- "pkcs8",
- "reqwest",
- "serde",
- "serde_json",
- "serde_urlencoded",
- "sha2",
- "sqlx",
- "tokio",
- "urlencoding",
-]
-
-[[package]]
 name = "bitflags"
 version = "2.9.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2258,6 +2236,28 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b9d12581f227e93f094d3af2ae690a574abb8a2b9b7a96e7cfe9647b2b617678"
 dependencies = [
  "once_cell",
+]
+
+[[package]]
+name = "tradesys"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "base64 0.21.7",
+ "chrono",
+ "dotenvy",
+ "ed25519-dalek",
+ "hex",
+ "hmac",
+ "pkcs8",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "serde_urlencoded",
+ "sha2",
+ "sqlx",
+ "tokio",
+ "urlencoding",
 ]
 
 [[package]]

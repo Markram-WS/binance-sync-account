@@ -11,7 +11,7 @@ pub struct Params {
 
 impl Params {
     #[allow(dead_code)]
-    fn new() -> Self {
+    pub fn new() -> Self {
         let timestamp = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .expect("time went backwards")
@@ -103,7 +103,7 @@ pub async fn account_info(payload:Params) -> Result< AccountInfo, Box<dyn Error>
         let ob: AccountInfo = serde_json::from_str(&text)?;
         Ok(ob)
     } else {
-        let err = format!("API error {}: {}", status.as_u16(), status.as_str());
+        let err = format!("status {} : {}", status.as_u16(), text);
         Err(err.into())
     }
 }

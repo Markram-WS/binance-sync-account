@@ -1,14 +1,12 @@
 
-mod cancel;
-pub use cancel::{cancel};
-
-mod create;
-pub use create::{create};
-
-mod status;
-pub use status::{status};
+pub mod create;
+pub mod status;
+pub mod cancel;
+pub mod opened;
 
 
-mod opened;
-pub use opened::{opened};
+pub use create::create_order;
+pub use status::get_order_status;
+pub use cancel::cancel_order;
+pub use opened::get_opened_order;
 
