@@ -7,12 +7,12 @@ use crate::utils::{get_env,create_signature};
 #[derive(Debug)]
 pub struct Params<'a> {
     symbol :  &'a str,
-    order_id :  &'a i64,
+    order_id :  &'a str,
     timestamp: String,
 }
 impl<'a> Params<'a> {
     #[allow(dead_code)]
-    pub fn new(symbol:  &'a str ,order_id :  &'a i64 ) -> Self {
+    pub fn new(symbol:  &'a str ,order_id :  &'a str ) -> Self {
         let timestamp: String = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .expect("time went backwards")
@@ -37,38 +37,40 @@ impl<'a> Params<'a> {
 }
 
 use serde::{Deserialize, Serialize};
+use crate::utils::convert::{i32_to_str,i8_to_str,str_to_option_f64};
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Order {
     pub symbol: String,
-    #[serde(rename = "orderId")]
-    pub order_id: i32,
-    #[serde(rename = "orderListId")]
-    pub order_list_id: i32,
+    #[serde(rename = "orderId",deserialize_with = "i32_to_str")]
+    pub order_id: String,
+    #[serde(rename = "orderListId",deserialize_with = "i8_to_str")]
+    pub order_list_id: String,
     #[serde(rename = "clientOrderId")]
     pub client_order_id: String,
     #[serde(rename = "transactTime")]
     pub transact_time: i64,
-    pub price: f64,
-    #[serde(rename = "origQty")]
-    pub orig_oty: f64,
-    #[serde(rename = "executedQty")]
-    pub executed_qty: f64,
-    #[serde(rename = "origQuoteOrderQty")]
-    pub orig_quote_order_qty: f64,
-    #[serde(rename = "cummulativeQuoteQty")]
-    pub cummulative_quote_qty: f64,
+    #[serde(rename = "price",deserialize_with = "str_to_option_f64", default)]
+    pub price: Option<f64>,
+    #[serde(rename = "origQty",deserialize_with = "str_to_option_f64", default)]
+    pub orig_qty: Option<f64>,
+    #[serde(rename = "executedQty",deserialize_with = "str_to_option_f64", default)]
+    pub executed_qty: Option<f64>,
+    #[serde(rename = "origQuoteOrderQty",deserialize_with = "str_to_option_f64", default)]
+    pub orig_quote_order_qty: Option<f64>,
+    #[serde(rename = "cummulativeQuoteQty",deserialize_with = "str_to_option_f64", default)]
+    pub cummulative_quote_qty: Option<f64>,
     #[serde(rename = "status")]
-    pub status: String,
+    pub status: Option<String>,
     #[serde(rename = "timeInForce")]
-    pub time_in_force: String,
+    pub time_in_force: Option<String>,
     #[serde(rename = "type")]
-    pub order_type: String,
+    pub order_type: Option<String>,
     #[serde(rename = "side")]
-    pub side: String,
+    pub side: Option<String>,
     #[serde(rename = "workingTime")]
-    pub working_time: String,
+    pub working_time: Option<String>,
     #[serde(rename = "selfTradePreventionMode")]
-    pub self_tade_prevention_mode : String
+    pub self_trade_prevention_mode: Option<String>,
 }
 
 
@@ -78,7 +80,7 @@ pub async fn cancel_order<'a>(payload: Params<'a>)  -> Result< Order, Box<dyn Er
     let api_key = get_env("API_KEY");
     let query_string = serde_urlencoded::to_string(&payload.to_pairs())?;
     let signature: String = create_signature(&payload.to_pairs(),&api_secret)?;
-    let url = format!("{}/api/v3/order/test?{}&signature={}", api_host, query_string, signature);
+    let url = format!("{}/api/v3/order?{}&signature={}", api_host, query_string, signature);
 
 
     let client = Client::new();

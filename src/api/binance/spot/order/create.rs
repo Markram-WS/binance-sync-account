@@ -19,8 +19,8 @@ impl OrderSide {
 #[derive(Debug)]
 pub enum OrderTypes {
     LIMIT,
-    MARKET,
     LIMIT_MAKER,
+    MARKET,
     // STOP_LOSS,
     // STOP_LOSS_LIMIT,
     // TAKE_PROFIT,
@@ -64,10 +64,10 @@ pub struct Params<'a> {
     side :  &'a OrderSide,
     order_type : &'a OrderTypes ,
     quantity:&'a f64,
-    price:&'a Option<f64>,
-    stop_price:&'a Option<f64>,
-    trailing_delta:&'a Option<f64>,
-    time_in_force: &'a Option<TimeInForce>,
+    price:Option<&'a f64>,
+    stop_price: Option<&'a f64>,
+    trailing_delta:Option<&'a f64>,
+    time_in_force: Option<&'a TimeInForce>,
     timestamp: String,
 }
 impl<'a> Params<'a> {
@@ -84,10 +84,10 @@ impl<'a> Params<'a> {
                         side,
                         order_type,
                         quantity,
-                        price: &None,
-                        stop_price: &None,
-                        trailing_delta: &None,
-                        time_in_force: &None,
+                        price: None,
+                        stop_price: None,
+                        trailing_delta: None,
+                        time_in_force: None,
                         timestamp,
                     },
             OrderTypes::LIMIT => Self {
@@ -95,10 +95,10 @@ impl<'a> Params<'a> {
                         side,
                         order_type,
                         quantity,
-                        price: &Some(0.0),           // set later
-                        stop_price: &None,
-                        trailing_delta: &None,
-                        time_in_force: &Some(TimeInForce::GTC), // default
+                        price : None,           
+                        stop_price: None,
+                        trailing_delta:None,
+                        time_in_force: Some(&TimeInForce::GTC,),
                         timestamp,
                     },
             OrderTypes::LIMIT_MAKER => Self {
@@ -106,10 +106,10 @@ impl<'a> Params<'a> {
                         side,
                         order_type,
                         quantity,
-                        price: &Some(0.0),           // set later
-                        stop_price: &None,
-                        trailing_delta: &None,
-                        time_in_force: &Some(TimeInForce::GTC), // always GTC
+                        price: None,         
+                        stop_price: None,
+                        trailing_delta: None,
+                        time_in_force: None,
                         timestamp,
                     },
             // OrderTypes::STOP_LOSS => panic!("`Err` STOP_LOSS not rady to use"),
@@ -120,65 +120,85 @@ impl<'a> Params<'a> {
         
     }
     #[allow(dead_code)]
-    pub fn price(mut self, price:&'a Option<f64>) -> Self {
-        self.price  = price;
+    pub fn price(mut self, price:&'a f64) -> Self {
+        self.price  =  Some(price);
         self
     }
     #[allow(dead_code)]
-    pub fn time_in_force(mut self, time_in_force:&'a Option<TimeInForce>) -> Self {
-        self.time_in_force  = time_in_force;
+    pub fn stop_price(mut self, stop_price:&'a f64) -> Self {
+        self.price  =  Some(stop_price);
+        self
+    }
+    #[allow(dead_code)]
+    pub fn trailing_delta(mut self, trailing_delta:&'a f64) -> Self {
+        self.price  =  Some(trailing_delta);
+        self
+    }
+    #[allow(dead_code)]
+    pub fn time_in_force(mut self, time_in_force:&'a TimeInForce) -> Self {
+        self.time_in_force  = Some(time_in_force);
         self
     }
 
     #[allow(dead_code)]
    fn to_pairs(&self) -> Vec<(&str, String)> {
-        vec![
-            ("symbol", self.symbol.to_string()),
-            ("side", self.side.as_str().to_string()),
-            ("type", self.order_type.as_str().to_string()),
-            ("quantity", self.quantity.to_string()),
-            ("price", self.price.map_or(String::new(), |v| v.to_string())),
-            ("stopPrice", self.stop_price.map_or(String::new(), |v| v.to_string())),
-            ("trailingDelta", self.trailing_delta.map_or(String::new(), |v| v.to_string())),
-            ("timeInForce", self.time_in_force.as_ref().map_or(String::new(), |v| v.as_str().to_string())),
-            ("timestamp", self.timestamp.clone()),
-        ]
+        let mut pairs = Vec::new();
+        pairs.push(("symbol", self.symbol.to_string()));
+        pairs.push(("side", self.side.as_str().to_string()));
+        pairs.push(("type", self.order_type.as_str().to_string()));
+        pairs.push(("quantity", self.quantity.to_string()));
+        pairs.push(("timestamp", self.timestamp.clone()));
+        if let Some(v) = self.price {
+            pairs.push(("price", v.to_string()));
+        }
+        if let Some(v) = self.stop_price {
+            pairs.push(("stopPrice", v.to_string()));
+        }
+        if let Some(v) = self.trailing_delta {
+            pairs.push(("trailingDelta", v.to_string()));
+        }
+        if let Some(v) = &self.time_in_force {
+            pairs.push(("timeInForce", v.as_str().to_string()));
+        }
+        pairs
     }
 }
 
 use serde::{Deserialize, Serialize};
+use crate::utils::convert::{i32_to_str,i8_to_str,str_to_option_f64};
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Order {
     pub symbol: String,
-    #[serde(rename = "orderId")]
-    pub order_id: i32,
-    #[serde(rename = "orderListId")]
-    pub order_list_id: i32,
+    #[serde(rename = "orderId",deserialize_with = "i32_to_str")]
+    pub order_id: String,
+    #[serde(rename = "orderListId",deserialize_with = "i8_to_str")]
+    pub order_list_id: String,
     #[serde(rename = "clientOrderId")]
     pub client_order_id: String,
     #[serde(rename = "transactTime")]
     pub transact_time: i64,
-    pub price: f64,
-    #[serde(rename = "origQty")]
-    pub orig_oty: f64,
-    #[serde(rename = "executedQty")]
-    pub executed_qty: f64,
-    #[serde(rename = "origQuoteOrderQty")]
-    pub orig_quote_order_qty: f64,
-    #[serde(rename = "cummulativeQuoteQty")]
-    pub cummulative_quote_qty: f64,
+    #[serde(rename = "price",deserialize_with = "str_to_option_f64", default)]
+    pub price: Option<f64>,
+    #[serde(rename = "origQty",deserialize_with = "str_to_option_f64", default)]
+    pub orig_qty: Option<f64>,
+    #[serde(rename = "executedQty",deserialize_with = "str_to_option_f64", default)]
+    pub executed_qty: Option<f64>,
+    #[serde(rename = "origQuoteOrderQty",deserialize_with = "str_to_option_f64", default)]
+    pub orig_quote_order_qty: Option<f64>,
+    #[serde(rename = "cummulativeQuoteQty",deserialize_with = "str_to_option_f64", default)]
+    pub cummulative_quote_qty: Option<f64>,
     #[serde(rename = "status")]
-    pub status: String,
+    pub status: Option<String>,
     #[serde(rename = "timeInForce")]
-    pub time_in_force: String,
+    pub time_in_force: Option<String>,
     #[serde(rename = "type")]
-    pub order_type: String,
+    pub order_type: Option<String>,
     #[serde(rename = "side")]
-    pub side: String,
+    pub side: Option<String>,
     #[serde(rename = "workingTime")]
-    pub working_time: String,
+    pub working_time: Option<String>,
     #[serde(rename = "selfTradePreventionMode")]
-    pub self_tade_prevention_mode : String
+    pub self_trade_prevention_mode: Option<String>,
 }
 
 
@@ -188,12 +208,12 @@ pub async fn create_order<'a>(payload: Params<'a>)  -> Result< Order, Box<dyn Er
     let api_key = get_env("API_KEY");
     let query_string = serde_urlencoded::to_string(&payload.to_pairs())?;
     let signature: String = create_signature(&payload.to_pairs(),&api_secret)?;
-    let url = format!("{}/api/v3/order/test?{}&signature={}", api_host, query_string, signature);
+    let url = format!("{}/api/v3/order?{}&signature={}", api_host, query_string, signature);
 
 
     let client = Client::new();
 
-    //println!("{}",&url);
+    println!("{}",&url);
     let res = client
         .post(&url)
         .header("X-MBX-APIKEY", &api_key) 
@@ -202,6 +222,7 @@ pub async fn create_order<'a>(payload: Params<'a>)  -> Result< Order, Box<dyn Er
         .await?;
     let status = res.status();
     let text = res.text().await?;
+    //println!("{}",&text);
     if status.is_success() {
         let ob: Order = serde_json::from_str(&text)?;
         Ok(ob)
