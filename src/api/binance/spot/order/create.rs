@@ -231,28 +231,3 @@ pub async fn create_order<'a>(payload: Params<'a>)  -> Result< Order, Box<dyn Er
         Err(err.into())
     }
 }
-
-// use std::env;
-// pub async fn test_api_binance_spot_order_create(){
-//     let api_key = get_env("API_KEY_TEST");
-//     let api_secret_test = get_env("API_SECRET_TEST");
-//     unsafe { 
-//         env::set_var("API_HOST", "https://testnet.binance.vision");
-//         env::set_var("API_SECRET", api_secret_test);
-//         env::set_var("API_KEY", api_key);
-
-//     };
-//     let payload = Params::new(&"BTCUSDT",&OrderSide::BUY,&0.001f64,&OrderTypes::LIMIT)
-//         .time_in_force(&Some(TimeInForce::GTC))
-//         .price(&Some(106000.00f64));
-    
-//     println!("payload : {:?}", &payload);
-//     match create(payload).await {
-//         Ok(res) => {
-//             println!("response : {:?}",res);
-//             assert_eq!(200, 200);
-//         },
-//         Err(e) => panic!("API error: {}", e),
-//     }
-// }
-
