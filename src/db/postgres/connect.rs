@@ -6,7 +6,7 @@ use crate::utils::{get_env, get_env_decode};
 use sqlx::Row ;
 
 
-pub async fn create_pool()  -> Result<sqlx::Pool<sqlx::Postgres>,sqlx::Error> {
+pub async fn create()  -> Result<sqlx::Pool<sqlx::Postgres>,sqlx::Error> {
     let db_host = get_env("DB_HOST");
     let db_user_decode = get_env_decode("POSTGRES_USER");
     let db_password_decode = get_env_decode("POSTGRES_PASSWORD");
@@ -34,7 +34,7 @@ mod tests {
     use std::env;
     //get_env
     #[tokio::test]
-    async  fn test_postgres_create_pool(){
+    async  fn test_postgres_create(){
         unsafe {
             env::set_var("DB_HOST", "localhost");
             env::set_var("POSTGRES_USER", "dGVzdA==");
@@ -46,7 +46,7 @@ mod tests {
             env::set_var("SYMBOL", "usd");
         };
 
-        let pool = create_pool().await.unwrap(); 
+        let pool = create().await.unwrap(); 
         // Dynamic query
         let result = sqlx::query("SELECT 1 = 1 as result")
         .fetch_one(&pool) 
