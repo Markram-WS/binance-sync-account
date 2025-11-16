@@ -25,12 +25,14 @@ impl<'a> Params<'a> {
     }
 }
 
-
+use crate::utils::convert::{str_to_f64};
 use serde::{Deserialize, Serialize};
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Trade {
     pub id: i32,
+    #[serde(rename = "price", deserialize_with = "str_to_f64")]
     pub price: f64,
+    #[serde(rename = "qty", deserialize_with = "str_to_f64")]
     pub qty: f64,
     #[serde(rename = "quoteQty")]
     pub quote_qty: f64,
