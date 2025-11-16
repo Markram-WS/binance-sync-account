@@ -17,33 +17,48 @@ use crate::utils::{self, get_env};
 #[allow(dead_code)]
 pub struct PublicStream{
     ws: Arc<Mutex<Option<BinanceStream>>>,
-
-    trade_tx:Sender<spot::Trade>,
-    
-    kline_tx:Sender<spot::Kline>,
-
-    terminated_tx:Sender<spot::Terminated>,
-
+    trade_tx: Option<mpsc::Sender<spot::Trade>>,
+    kline_tx: Option<mpsc::Sender<spot::Kline>>,
+    terminated_tx: Option<mpsc::Sender<spot::Terminated>>,
     url: String
 }
 
 impl PublicStream {
     
-    pub fn new() -> (Self,
-        mpsc::Receiver<spot::Trade>,
-        mpsc::Receiver<spot::Kline>,
-        mpsc::Receiver<spot::Terminated>) {
-
+    pub fn new() -> Self {
         let ws = Arc::new(Mutex::new(None));
-        let (trade_tx, trade_rx) = mpsc::channel::<spot::Trade>(100);
-        let (kline_tx, kline_rx) = mpsc::channel::<spot::Kline>(100);
-        let (terminated_tx, terminated_rx) = mpsc::channel::<spot::Terminated>(100);
         let url:String = format!("{}/stream?streams=",get_env("STREAM_HOST") ).to_string();
-        ( Self { ws,url,trade_tx, kline_tx,terminated_tx}, trade_rx, kline_rx, terminated_rx)
+        Self { ws,url,trade_tx: None,kline_tx: None,terminated_tx: None,}
+    }
+
+    pub fn build(mut self) -> (Self ,
+    Option<mpsc::Receiver<spot::Trade>>,
+    Option<mpsc::Receiver<spot::Kline>>,
+    Option<mpsc::Receiver<spot::Terminated>>)
+    {
+        let trade_rx = if self.url.contains("@trade") {
+            let (tx, rx) = mpsc::channel::<spot::Trade>(100);
+            self.trade_tx = Some(tx);
+            Some(rx)
+        } else { None };
+
+        let kline_rx = if self.url.contains("@kline") {
+            let (tx, rx) = mpsc::channel::<spot::Kline>(100);
+            self.kline_tx = Some(tx);
+            Some(rx)
+        } else { None };
+
+        let terminated_rx = if self.url.contains("@terminated") {
+            let (tx, rx) = mpsc::channel(100);
+            self.terminated_tx = Some(tx);
+            Some(rx)
+        } else { None };
+
+        (self, trade_rx, kline_rx, terminated_rx)
     }
 
     pub fn  trade(mut self,symbol:&str) -> Self {
-        self.url.push_str(&format!("{}@trade/", symbol)  );
+        self.url.push_str(&format!("{}@trade/", symbol));
         self
     }
 
@@ -53,6 +68,7 @@ impl PublicStream {
     }
 
     pub async fn start_stream(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+        println!("{}",&self.url.trim_end_matches('/').to_string() );
         let (ws_stream, _)  = connect_async(&self.url.trim_end_matches('/').to_string() ).await?;
         let mut ws = self.ws.lock().await; 
         *ws = Some(ws_stream); 
@@ -65,28 +81,30 @@ impl PublicStream {
         let trade_tx = self.trade_tx.clone();
         let kline_tx = self.kline_tx.clone();
         let terminated_tx = self.terminated_tx.clone();
-    
+        println!("[0]");
         tokio::spawn(async move {
-            loop {
-                let msg_opt = {
-                    // lock เพื่อดึง ws จริง
-                    let mut lock = ws_clone.lock().await;
-                    if let Some(ws) = lock.as_mut() {
-                        ws.next().await
-                    } else {
-                        None
-                    }
+            let mut guard = ws_clone.lock().await;
+            let ws = guard.as_mut().expect("WS not started");
+            println!("[1]");
+            while let Some(msg) = ws.next().await {
+                let txt = match msg {
+                    Ok(m) => match m.to_text() {
+                        Ok(t) => t.to_string(),
+                        Err(_) => continue,
+                    },
+                    Err(_) => continue,
                 };
-    
-                if let Some(Ok(msg)) = msg_opt {
-                    let txt = msg.to_text().unwrap();
-                    dispatch_event(&txt, trade_tx.clone(), kline_tx.clone(), terminated_tx.clone()).await;
-                } else {
-                    // WS ยังไม่พร้อมหรือ None → รอสักพัก
-                    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-                }
+                println!("[msg] {}", txt);
+                println!("--------------------------");
+                dispatch_event(
+                    &txt,
+                    &trade_tx,
+                    &kline_tx,
+                    &terminated_tx
+                ).await;
             }
         });
+
     
         Ok(())
     }
@@ -95,7 +113,11 @@ impl PublicStream {
 }
 
 #[allow(dead_code)]
-async fn dispatch_event(txt: &str,trade_tx: Sender<spot::Trade>,kline_tx: Sender<spot::Kline>,terminated_tx: Sender<spot::Terminated>) {
+async fn dispatch_event(txt: &str,
+    trade_tx: &Option<Sender<spot::Trade>>,
+    kline_tx: &Option<Sender<spot::Kline>>,
+    terminated_tx: &Option<Sender<spot::Terminated>>) {
+        
     let parsed: Value = match serde_json::from_str(txt) {
         Ok(v) => v,
         Err(e) => {
@@ -113,19 +135,26 @@ async fn dispatch_event(txt: &str,trade_tx: Sender<spot::Trade>,kline_tx: Sender
 
     match event["e"].as_str() {
         Some("trade") => {
-            if let Ok(ev) = serde_json::from_value::<spot::Trade>(event.clone()) {
-                trade_handler(ev,trade_tx).await;
+            if let Some(tx) = trade_tx {
+                if let Ok(ev) = serde_json::from_value::<spot::Trade>(event.clone()) {
+                    let _ = tx.send(ev).await;
+                }
             }
         }
         Some("kline") => {
-            if let Ok(ev) = serde_json::from_value::<spot::Kline>(event.clone()) { 
-                kline_handler(ev,kline_tx).await;
+            if let Some(tx) = &kline_tx {
+                if let Ok(ev) = serde_json::from_value::<spot::Kline>(event.clone()) {
+                    let _ = tx.send(ev).await;
+                }
             }
         }
         Some("eventStreamTerminated") => {
-            if let Ok(ev) = serde_json::from_value::<spot::Terminated>(event.clone()) {
-                terminated_handler(ev,terminated_tx).await;
+            if let Some(tx) = &terminated_tx {
+                if let Ok(ev) = serde_json::from_value::<spot::Terminated>(event.clone()) {
+                    let _ = tx.send(ev).await;
+                }
             }
+            
         }
         
         _ => {}
@@ -136,7 +165,7 @@ async fn dispatch_event(txt: &str,trade_tx: Sender<spot::Trade>,kline_tx: Sender
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tokio::time::{timeout, Duration};
+    use tokio::time::{Duration};
     use std::env;
     use std::sync::Once;
     use dotenvy::dotenv;
@@ -159,26 +188,35 @@ mod tests {
         };
     
         // 2️⃣ สร้าง stream + คืน Receiver สำหรับแต่ละ topic
-        let (mut stream, mut trade_rx, mut kline_rx, mut terminated_rx) = PublicStream::new();
-        stream = stream.trade("BTCUSDT").kline("BTCUSDT", "1m");
+        let (mut stream, trade_rx, kline_rx, _terminated_rx) = PublicStream::new()
+        .trade("btcusdt")
+        .kline("btcusdt", "1m")
+        .build();
+      
         stream.start_stream().await.unwrap();
         stream.listen().await?;
         
-        tokio::spawn(async move {
-            while let Some(ev) = trade_rx.recv().await {
-                println!("[TRADE] {:?}", ev);
-            }
-        });
+        if let Some(mut trade_rx) = trade_rx {
+            tokio::spawn(async move {
+                while let Some(ev) = trade_rx.recv().await {
+                    println!("[TRADE] {:?}", ev);
+                }
+            });
+        }
         
-        tokio::spawn(async move {
-            while let Some(ev) = kline_rx.recv().await {
-                println!("[KLINE] {:?}", ev);
-            }
-        });
+        if let Some(mut kline_rx) = kline_rx {
+            tokio::spawn(async move {
+                while let Some(ev) = kline_rx.recv().await {
+                    println!("[KLINE] {:?}", ev);
+                }
+            });
+        }
         
-        tokio::time::sleep(std::time::Duration::from_secs(10)).await;
+        tokio::time::sleep(Duration::from_secs(5)).await;
     
         Ok(())
     }
     
 }
+
+
