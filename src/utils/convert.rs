@@ -22,6 +22,14 @@ where
     Ok(value.to_string())
 }
 
+pub fn str_to_f64<'de, D>(deserializer: D) -> Result<f64, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let s: &str = Deserialize::deserialize(deserializer)?;
+    s.parse::<f64>().map_err(serde::de::Error::custom)
+}
+
 
 pub fn str_to_option_f64<'de, D>(deserializer: D) -> Result<Option<f64>, D::Error>
 where
@@ -38,15 +46,6 @@ where
         }
         None => Ok(None), // ไม่มีค่า → None
     }
-}
-
-
-pub fn str_to_f64<'de, D>(deserializer: D) -> Result<f64, D::Error>
-where
-    D: serde::Deserializer<'de>,
-{
-    let s: &str = Deserialize::deserialize(deserializer)?;
-    s.parse::<f64>().map_err(serde::de::Error::custom)
 }
 
 pub fn vec_str_pair_to_f64<'de, D>(deserializer: D) -> Result<Vec<(f64, f64)>, D::Error>

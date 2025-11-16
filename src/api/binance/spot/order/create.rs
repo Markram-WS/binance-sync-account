@@ -18,9 +18,9 @@ impl OrderSide {
 }
 #[derive(Debug)]
 pub enum OrderTypes {
-    LIMIT,
-    LIMIT_MAKER,
-    MARKET,
+    Limit,
+    LimitMaker,
+    Market,
     // STOP_LOSS,
     // STOP_LOSS_LIMIT,
     // TAKE_PROFIT,
@@ -30,9 +30,9 @@ pub enum OrderTypes {
 impl OrderTypes {
     pub fn as_str(&self) -> &'static str {
         match self {
-            OrderTypes::LIMIT => "LIMIT",
-            OrderTypes::LIMIT_MAKER => "LIMIT_MAKER",
-            OrderTypes::MARKET => "MARKET",
+            OrderTypes::Limit => "LIMIT",
+            OrderTypes::LimitMaker => "LIMIT_MAKER",
+            OrderTypes::Market => "MARKET",
             // OrderTypes::STOP_LOSS => "STOP_LOSS",
             // OrderTypes::STOP_LOSS_LIMIT => "STOP_LOSS_LIMIT",
             // OrderTypes::TAKE_PROFIT => "TAKE_PROFIT",
@@ -79,7 +79,7 @@ impl<'a> Params<'a> {
         .as_millis()
         .to_string();
         match &order_type {
-            OrderTypes::MARKET => Self {
+            OrderTypes::Market => Self {
                         symbol,
                         side,
                         order_type,
@@ -90,7 +90,7 @@ impl<'a> Params<'a> {
                         time_in_force: None,
                         timestamp,
                     },
-            OrderTypes::LIMIT => Self {
+            OrderTypes::Limit => Self {
                         symbol,
                         side,
                         order_type,
@@ -101,7 +101,7 @@ impl<'a> Params<'a> {
                         time_in_force: Some(&TimeInForce::GTC,),
                         timestamp,
                     },
-            OrderTypes::LIMIT_MAKER => Self {
+            OrderTypes::LimitMaker => Self {
                         symbol,
                         side,
                         order_type,
