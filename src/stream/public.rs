@@ -3,17 +3,55 @@ use tokio_tungstenite::MaybeTlsStream;
 // connection.rs
 use tokio_tungstenite::{connect_async, tungstenite::Message};
 use futures::{ StreamExt}; 
-use super::handlers::spot::{trade_handler, order_handler,balance_handler,kline_handler,terminated_handler,account_handler};
 use tokio::sync::mpsc::Sender;
 use tokio::sync::mpsc::Receiver;
 use tokio::net::TcpStream;
 use tokio::sync::{mpsc,Mutex};
-use super::binance::spot;
 use serde_json::Value;
 use std::sync::Arc;
 type BinanceStream = WebSocketStream<MaybeTlsStream<TcpStream>>;
 
+use super::binance::spot;
+use super::handlers::spot::{trade_handler, order_handler,balance_handler,kline_handler,terminated_handler,account_handler,dispatch};
+use crate::utils::{self, get_env};
 
+#[allow(dead_code)]
+async fn dispatch_event(txt: &str,trade_tx: Sender<spot::Trade>,kline_tx: Sender<spot::Kline>,terminated_tx: Sender<spot::Terminated>) {
+    let parsed: Value = match serde_json::from_str(txt) {
+        Ok(v) => v,
+        Err(e) => {
+            log::warn!("JSON parse error: {:?}", e);
+            return;
+        }
+    };
+
+    // ✅ ตรวจว่า event อยู่ตรงไหน
+    let event = if parsed.get("event").is_some() {
+        &parsed["event"]
+    } else {
+        &parsed
+    };
+
+    match event["e"].as_str() {
+        Some("trade") => {
+            if let Ok(ev) = serde_json::from_value::<spot::Trade>(event.clone()) {
+                trade_handler(ev,trade_tx).await;
+            }
+        }
+        Some("kline") => {
+            if let Ok(ev) = serde_json::from_value::<spot::Kline>(event.clone()) { 
+                kline_handler(ev,kline_tx).await;
+            }
+        }
+        Some("eventStreamTerminated") => {
+            if let Ok(ev) = serde_json::from_value::<spot::Terminated>(event.clone()) {
+                terminated_handler(ev,terminated_tx).await;
+            }
+        }
+        
+        _ => {}
+    }
+}
 
 pub struct PublicStream{
     ws: Arc<Mutex<Option<BinanceStream>>>,
@@ -36,16 +74,20 @@ impl PublicStream {
         let (trade_tx,mut trade_rx) = mpsc::channel::<spot::Trade>(100);
         let (kline_tx,mut kline_rx) = mpsc::channel::<spot::Kline>(100);
         let (terminated_tx,mut terminated_rx) = mpsc::channel::<spot::Terminated>(100);
-        let url:String = "wss://stream.binance.com:9443/stream?streams=".to_string();
+        
+        
+        let url:String = format!("{}/stream?streams=",get_env("STREAM_HOST") ).to_string();
         Self { ws,url,trade_tx, kline_tx,terminated_tx,trade_rx, kline_rx, terminated_rx}
     }
 
-    pub async fn trade(&mut self,symbol:&str) {
+    pub fn  trade(mut self,symbol:&str) -> Self {
         self.url.push_str(&format!("{}@trade/", symbol)  );
+        self
     }
 
-    pub async fn kline(&mut self,symbol:&str,interval:&str) {
+    pub fn kline(mut self,symbol:&str,interval:&str) -> Self {
         self.url.push_str(&format!("{}@kline_{}/", symbol,interval) );
+        self
     }
 
     pub async fn start_stream(&mut self) -> Result<(), Box<dyn std::error::Error>> {
@@ -55,116 +97,66 @@ impl PublicStream {
         Ok(())
     }
 
-
-    async fn listen(&self) -> anyhow::Result<()> {
+    #[allow(dead_code)]
+    pub async fn listen(&self) -> anyhow::Result<()> {
         let ws_clone = self.ws.clone();
-    
+        let trade_tx = self.trade_tx.clone();
+        let kline_tx = self.kline_tx.clone();
+        let terminated_tx = self.terminated_tx.clone();
+
         tokio::spawn(async move {
+            // ดึง WebSocketStream ออกจาก Mutex
             let ws_stream = {
                 let mut guard = ws_clone.lock().await;
-    
-                // ถ้า ws ยังเป็น None → ยังไม่ connect
-                if guard.is_none() {
-                    log::error!("WebSocket not connected");
-                    return;
-                }
-    
-                // ดึงออกมา (take) ทำลาย option
-                guard.take().unwrap()
+                guard.take().expect("WebSocket not connected")
             };
-    
-            // ตอนนี้ ws_stream คือ WebSocketStream ไม่ติด mutex แล้ว
-            let (mut  write, mut read) = ws_stream.split();
-    
+
+            // split เป็น write/read
+            let (_, mut read) = ws_stream.split();
+
             while let Some(msg) = read.next().await {
                 if let Ok(Message::Text(txt)) = msg {
-                    // !!! self ใช้ไม่ได้ใน spawn move (เพราะ self ไม่ 'static)
-                    // ต้องว่าจ้าง cloned handler ก่อน
-                    // แต่ตรงนี้ขอตัวอย่างแก้ concept ก่อน
+                    dispatch_event(&txt, trade_tx.clone(), kline_tx.clone(), terminated_tx.clone()).await;
                 }
             }
         });
-    
+
         Ok(())
-    }
-    
-  
-    async fn dispatch(&self, txt: &str) {
-        let parsed: Value = match serde_json::from_str(txt) {
-            Ok(v) => v,
-            Err(e) => {
-                log::warn!("JSON parse error: {:?}", e);
-                return;
-            }
-        };
-    
-        // ✅ ตรวจว่า event อยู่ตรงไหน
-        let event = if parsed.get("event").is_some() {
-            &parsed["event"]
-        } else {
-            &parsed
-        };
-    
-        match event["e"].as_str() {
-            Some("trade") => {
-                if let Ok(ev) = serde_json::from_value::<spot::Trade>(event.clone()) {
-                    trade_handler(ev,self.trade_tx.clone()).await;
-                }
-            }
-            Some("kline") => {
-                if let Ok(ev) = serde_json::from_value::<spot::Kline>(event.clone()) { 
-                    kline_handler(ev,self.kline_tx.clone()).await;
-                }
-            }
-            Some("eventStreamTerminated") => {
-                if let Ok(ev) = serde_json::from_value::<spot::Terminated>(event.clone()) {
-                    terminated_handler(ev,self.terminated_tx.clone()).await;
-                }
-            }
-            
-            _ => {}
-        }
     }
 }
 
-// enum Event {
-//     Trade(spot::Trade),
-//     Kline(spot::Kline),
-//     Order(spot::Order),
-// }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tokio::time::{timeout, Duration};
+    use tokio::sync::mpsc;
 
+    #[tokio::test]
+    async fn test_public_stream_listen() {
+        // สร้าง stream
+        let mut stream = PublicStream::new()
+            .trade("BTCUSDT")
+            .kline("BTCUSDT", "1m");
 
-// pub async fn connect_and_listen() -> anyhow::Result<()> {
-//     let (ws, _) = connect_async(format!("wss://stream.binance.com:9443/ws/{}",url.to_string()) ).await?;
-//     let (_, mut read) = ws.split();
+        // เริ่ม WebSocket stream
+        stream.start_stream().await.unwrap();
 
-//     while let Some(msg) = read.next().await {
-//         if let Ok(Message::Text(json)) = msg {
-//             // 🟩 step 1: รับ JSON แล้วโยนไป dispatch
-//             dispatch_event(&json,).await;
-//         }
-//     }
-//     Ok(())
-// }
+        // ใช้ timeout 10 วิ เพื่อจำกัดการรัน
+        let result = timeout(Duration::from_secs(10), async {
+            // เริ่ม listen (dispatch_event ภายใน listen จะเรียก handler)
+            stream.listen().await.unwrap();
 
+            // รอรับ trade event จาก channel
+            let mut trade_rx = stream.trade_rx;
+            while let Some(trade_event) = trade_rx.recv().await {
+                println!("Received trade event: {:?}", trade_event);
+            }
+        })
+        .await;
 
-// use tokio::sync::mpsc;
-
-// #[tokio::main]
-// async fn main() {
-//     let (tx, mut rx) = mpsc::channel::<spot::Trade>(100);
-
-//     // spawn stream task
-//     tokio::spawn(async move {
-//         start_spot_stream("btcusdt", tx.clone()).await.unwrap();
-//         start_kline_stream(xxxxx)
-//     });
-
-//     // spawn calculation task
-//     tokio::spawn(async move {
-//         while let Some(trade) = rx.recv().await {
-//             process_trade(trade).await;
-//         }
-//     });
-// }
+        if result.is_err() {
+            println!("Listen test timed out after 10 seconds");
+        }
+    }
+}

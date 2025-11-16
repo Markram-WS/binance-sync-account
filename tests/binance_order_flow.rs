@@ -43,7 +43,7 @@ mod tests {
             &symbol,
             &order::OrderSide::BUY,
             &0.001 ,
-            &order::OrderTypes::LIMIT_MAKER).price(&last_qty);
+            &order::OrderTypes::LimitMaker).price(&last_qty);
         println!("payload limit order : {:?}",&payload_create_order);
 
         let order: order::create::Order =  order::create_order(payload_create_order).await.unwrap();

@@ -15,9 +15,9 @@ pub async fn account_handler(event: spot::Account, tx: Sender<spot::Account>) {
 }
 
 pub async fn trade_handler(event: spot::Trade, tx: Sender<spot::Trade>) {
-    
-    if 1.0 > 100000.0 {
-        log::info!("{} price too high, skipping", &event.symbol);
+    let price  = &event.price;
+    if *price == 0.0 as f64 {
+        log::info!("{} price is zero, skipping", &event.symbol);
     } else {
         // ส่งข้อมูลไปยัง calculation module
         if let Err(e) = tx.send(event).await {
@@ -27,15 +27,8 @@ pub async fn trade_handler(event: spot::Trade, tx: Sender<spot::Trade>) {
 }
 
 pub async fn kline_handler(event: spot::Kline, tx: Sender<spot::Kline>) {
-    let symbol = event.symbol.clone();
-
-    if 1.0 > 100000.0 {
-        log::info!("{} price too high, skipping", symbol);
-    } else {
-        // ส่งข้อมูลไปยัง calculation module
-        if let Err(e) = tx.send(event).await {
-            log::error!("Failed to send trade event: {}", e);
-        }
+    if let Err(e) = tx.send(event).await {
+        log::error!("Failed to send trade event: {}", e);
     }
 }
 
