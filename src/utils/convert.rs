@@ -26,7 +26,7 @@ pub fn str_to_f64<'de, D>(deserializer: D) -> Result<f64, D::Error>
 where
     D: serde::Deserializer<'de>,
 {
-    let s: &str = Deserialize::deserialize(deserializer)?;
+    let s:String = Deserialize::deserialize(deserializer)?;
     s.parse::<f64>().map_err(serde::de::Error::custom)
 }
 

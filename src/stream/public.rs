@@ -5,6 +5,7 @@ use tokio_tungstenite::{connect_async, tungstenite::Message};
 use futures::{ StreamExt}; 
 use tokio::sync::mpsc::Sender;
 use tokio::sync::mpsc::Receiver;
+use tokio::sync::broadcast;
 use tokio::net::TcpStream;
 use tokio::sync::{mpsc,Mutex};
 use serde_json::Value;
@@ -14,55 +15,34 @@ type BinanceStream = WebSocketStream<MaybeTlsStream<TcpStream>>;
 use super::binance::spot;
 use super::handlers::spot::{trade_handler, order_handler,balance_handler,kline_handler,terminated_handler,account_handler};
 use crate::utils::{self, get_env};
+
+pub enum Event {
+    Trade(spot::Trade),
+    Kline(spot::Kline),
+    Terminated(spot::Terminated),
+}
+
 #[allow(dead_code)]
 pub struct PublicStream{
     ws: Arc<Mutex<Option<BinanceStream>>>,
-    trade_tx: Option<mpsc::Sender<spot::Trade>>,
-    kline_tx: Option<mpsc::Sender<spot::Kline>>,
-    terminated_tx: Option<mpsc::Sender<spot::Terminated>>,
+    event_tx: mpsc::Sender<Event>,
     url: String
 }
 
 impl PublicStream {
     
-    pub fn new() -> Self {
+    pub fn new() ->  (Self,mpsc::Receiver<Event>) {
         let ws = Arc::new(Mutex::new(None));
         let url:String = format!("{}/stream?streams=",get_env("STREAM_HOST") ).to_string();
-        Self { ws,url,trade_tx: None,kline_tx: None,terminated_tx: None,}
+        let (tx, rx) = mpsc::channel::<Event>(100);
+        (Self { ws,url,event_tx:tx},rx)
     }
-
-    pub fn build(mut self) -> (Self ,
-    Option<mpsc::Receiver<spot::Trade>>,
-    Option<mpsc::Receiver<spot::Kline>>,
-    Option<mpsc::Receiver<spot::Terminated>>)
-    {
-        let trade_rx = if self.url.contains("@trade") {
-            let (tx, rx) = mpsc::channel::<spot::Trade>(100);
-            self.trade_tx = Some(tx);
-            Some(rx)
-        } else { None };
-
-        let kline_rx = if self.url.contains("@kline") {
-            let (tx, rx) = mpsc::channel::<spot::Kline>(100);
-            self.kline_tx = Some(tx);
-            Some(rx)
-        } else { None };
-
-        let terminated_rx = if self.url.contains("@terminated") {
-            let (tx, rx) = mpsc::channel(100);
-            self.terminated_tx = Some(tx);
-            Some(rx)
-        } else { None };
-
-        (self, trade_rx, kline_rx, terminated_rx)
-    }
-
-    pub fn  trade(mut self,symbol:&str) -> Self {
+    pub fn  trade(mut self,symbol:&str) -> Self  {
         self.url.push_str(&format!("{}@trade/", symbol));
         self
     }
 
-    pub fn kline(mut self,symbol:&str,interval:&str) -> Self {
+    pub fn kline(mut self,symbol:&str,interval:&str) ->  Self {
         self.url.push_str(&format!("{}@kline_{}/", symbol,interval) );
         self
     }
@@ -78,14 +58,10 @@ impl PublicStream {
     #[allow(dead_code)]
     pub async fn listen(&self) -> anyhow::Result<()> {
         let ws_clone = self.ws.clone();
-        let trade_tx = self.trade_tx.clone();
-        let kline_tx = self.kline_tx.clone();
-        let terminated_tx = self.terminated_tx.clone();
-        println!("[0]");
+        let event_tx = self.event_tx.clone();
         tokio::spawn(async move {
             let mut guard = ws_clone.lock().await;
             let ws = guard.as_mut().expect("WS not started");
-            println!("[1]");
             while let Some(msg) = ws.next().await {
                 let txt = match msg {
                     Ok(m) => match m.to_text() {
@@ -94,13 +70,8 @@ impl PublicStream {
                     },
                     Err(_) => continue,
                 };
-                println!("[msg] {}", txt);
-                println!("--------------------------");
                 dispatch_event(
-                    &txt,
-                    &trade_tx,
-                    &kline_tx,
-                    &terminated_tx
+                    &txt,&event_tx
                 ).await;
             }
         });
@@ -113,10 +84,7 @@ impl PublicStream {
 }
 
 #[allow(dead_code)]
-async fn dispatch_event(txt: &str,
-    trade_tx: &Option<Sender<spot::Trade>>,
-    kline_tx: &Option<Sender<spot::Kline>>,
-    terminated_tx: &Option<Sender<spot::Terminated>>) {
+async fn dispatch_event(txt: &str,event_tx: &Sender<Event>) {
         
     let parsed: Value = match serde_json::from_str(txt) {
         Ok(v) => v,
@@ -127,39 +95,60 @@ async fn dispatch_event(txt: &str,
     };
 
     // ✅ ตรวจว่า event อยู่ตรงไหน
-    let event = if parsed.get("event").is_some() {
-        &parsed["event"]
-    } else {
-        &parsed
-    };
+    let event_type = parsed.get("e")
+    .or_else(|| parsed.get("data").and_then(|d| d.get("e")))
+    .and_then(|v| v.as_str());
 
-    match event["e"].as_str() {
+    match event_type {
         Some("trade") => {
-            if let Some(tx) = trade_tx {
-                if let Ok(ev) = serde_json::from_value::<spot::Trade>(event.clone()) {
-                    let _ = tx.send(ev).await;
+            if let Some(data) = parsed.get("data") {
+                match serde_json::from_value::<spot::Trade>(data.clone()) {
+                    Ok(ev) => {
+                        
+                            let _ = event_tx.send(Event::Trade(ev)).await;  
+                        
+                    }
+                    Err(e) => {
+                        println!("Failed to parse trade event: {:?}", e);
+                    }
                 }
             }
         }
+
         Some("kline") => {
-            if let Some(tx) = &kline_tx {
-                if let Ok(ev) = serde_json::from_value::<spot::Kline>(event.clone()) {
-                    let _ = tx.send(ev).await;
+            if let Some(data) = parsed.get("data") {
+                match serde_json::from_value::<spot::Kline>(data.clone()) {
+                    Ok(ev) => {
+                       
+                            let _ = event_tx.send(Event::Kline(ev)).await;  
+                        
+                    }
+                    Err(e) => {
+                        println!("Failed to parse trade event: {:?}", e);
+                    }
                 }
             }
         }
         Some("eventStreamTerminated") => {
-            if let Some(tx) = &terminated_tx {
-                if let Ok(ev) = serde_json::from_value::<spot::Terminated>(event.clone()) {
-                    let _ = tx.send(ev).await;
+            if let Some(data) = parsed.get("data") {
+                match serde_json::from_value::<spot::Terminated>(data.clone()) {
+                    Ok(ev) => {
+                     
+                            let _ = event_tx.send(Event::Terminated(ev)).await; 
+                        
+                    }
+                    Err(e) => {
+                        println!("Failed to parse trade event: {:?}", e);
+                    }
                 }
             }
-            
         }
         
         _ => {}
     }
 }
+
+
 
 
 #[cfg(test)]
@@ -188,31 +177,68 @@ mod tests {
         };
     
         // 2️⃣ สร้าง stream + คืน Receiver สำหรับแต่ละ topic
-        let (mut stream, trade_rx, kline_rx, _terminated_rx) = PublicStream::new()
-        .trade("btcusdt")
-        .kline("btcusdt", "1m")
-        .build();
-      
-        stream.start_stream().await.unwrap();
-        stream.listen().await?;
+        let (mut stream_trade, trade_rx) = PublicStream::new();
+        stream_trade.trade("btcusdt");
+
+        let (mut stream_kline, kline_rx) = PublicStream::new();
+        stream_kline.kline("btcusdt", "1m");
+   
         
-        if let Some(mut trade_rx) = trade_rx {
-            tokio::spawn(async move {
-                while let Some(ev) = trade_rx.recv().await {
-                    println!("[TRADE] {:?}", ev);
+        stream_trade.start_stream().await.unwrap();
+        stream_kline.start_stream().await.unwrap();
+        stream_trade.listen().await?;
+        stream_kline.listen().await?;
+
+        tokio::spawn(async move {
+            println!("EVENT LOOP START");
+            loop {
+                tokio::select! {
+                    let mut trade_res = trade_rx.expect("trade_rx is None");
+                    while trade_res.recv().await => {
+                        println!("TRADE: {:?}", trade);
+                    },
+                    Some(mut kline) = kline_rx.recv().await => {
+                        println!("KLINE: {:?}", kline);
+                    },
+                    else => {
+                        println!("Both channels closed");
+                        break;
+                    }
                 }
-            });
-        }
+            }
+        });
+
         
-        if let Some(mut kline_rx) = kline_rx {
-            tokio::spawn(async move {
-                while let Some(ev) = kline_rx.recv().await {
-                    println!("[KLINE] {:?}", ev);
-                }
-            });
-        }
+        // println!("Before let Some");
+        // if let Some(mut trade_rx) = trade_rx {
+        //     println!("after let Some");
+        //     tokio::spawn(async move {
+        //         println!("TRADE TASK START");
+        //         loop {
+        //             match trade_rx.recv().await {
+        //                 Some(ev) => println!("GOT EVENT: {:?}", ev),
+        //                 None => {
+        //                     println!("TRADE CHANNEL CLOSED");
+        //                     break;
+        //                 }
+        //             }
+        //         }
+        //     });
+        // }
         
-        tokio::time::sleep(Duration::from_secs(5)).await;
+        
+        
+        // if let Some(mut kline_rx) = kline_rx {
+        //     tokio::spawn(async move {
+        //         while let Some(ev) = kline_rx.recv().await {
+        //             println!("[KLINE] {:?}", &ev);
+        //             //let _ = res_tx.send(ev.event_type.clone());
+
+        //         }
+        //     });
+        // }
+        
+        tokio::time::sleep(Duration::from_secs(3)).await;
     
         Ok(())
     }
