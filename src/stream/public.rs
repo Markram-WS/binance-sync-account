@@ -151,11 +151,10 @@ async fn dispatch_event(txt: &str,event_tx: &mpsc::Sender<Event>) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tokio::time::{Duration};
     use std::env;
     use std::sync::Once;
     use dotenvy::dotenv;
-    
+    use tokio::time::{timeout, Duration};
     static INIT: Once = Once::new();
 
     
@@ -166,7 +165,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_public_stream_listen() -> anyhow::Result<()> {
+    async fn test_public_stream_listen()  {
         // 1️⃣ init logger / env
         init();
         unsafe { 
@@ -183,53 +182,25 @@ mod tests {
         
         stream_trade.start_stream().await.unwrap();
         stream_kline.start_stream().await.unwrap();
-        stream_trade.listen().await?;
-        stream_kline.listen().await?;
-
-        tokio::spawn(async move {
-            println!("EVENT LOOP START");
+        stream_trade.listen().await.unwrap();
+        stream_kline.listen().await.unwrap();
+        let result = timeout(Duration::from_secs(3), async {
             loop {
                 tokio::select! {
-                    Some(Event::Trade(t)) = trade_rx.recv() => println!("TRADE: {:?}", t),
-                    Some(Event::Kline(k)) = kline_rx.recv() => println!("KLINE: {:?}", k),
+                    Some(Event::Trade(t)) = trade_rx.recv() => {
+                        println!("TRADE: {:?}", t);
+                        break ;  
+                    },
+                    Some(Event::Kline(k)) = kline_rx.recv() => {
+                        println!("KLINE: {:?}", k);
+                        break ;
+                    },
                     else => break,
                 }
             }
-        });
+        }).await;
 
-        
-        // println!("Before let Some");
-        // if let Some(mut trade_rx) = trade_rx {
-        //     println!("after let Some");
-        //     tokio::spawn(async move {
-        //         println!("TRADE TASK START");
-        //         loop {
-        //             match trade_rx.recv().await {
-        //                 Some(ev) => println!("GOT EVENT: {:?}", ev),
-        //                 None => {
-        //                     println!("TRADE CHANNEL CLOSED");
-        //                     break;
-        //                 }
-        //             }
-        //         }
-        //     });
-        // }
-        
-        
-        
-        // if let Some(mut kline_rx) = kline_rx {
-        //     tokio::spawn(async move {
-        //         while let Some(ev) = kline_rx.recv().await {
-        //             println!("[KLINE] {:?}", &ev);
-        //             //let _ = res_tx.send(ev.event_type.clone());
-
-        //         }
-        //     });
-        // }
-        
-        tokio::time::sleep(Duration::from_secs(3)).await;
-    
-        Ok(())
+        assert!(result.is_ok(), "Did not receive event in time");
     }
     
 }
