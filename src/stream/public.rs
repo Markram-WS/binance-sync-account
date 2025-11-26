@@ -3,9 +3,6 @@ use tokio_tungstenite::MaybeTlsStream;
 // connection.rs
 use tokio_tungstenite::{connect_async, tungstenite::Message};
 use futures::{ StreamExt}; 
-use tokio::sync::mpsc::Sender;
-use tokio::sync::mpsc::Receiver;
-use tokio::sync::broadcast;
 use tokio::net::TcpStream;
 use tokio::sync::{mpsc,Mutex};
 use serde_json::Value;
@@ -34,20 +31,20 @@ impl PublicStream {
     pub fn new() ->  (Self,mpsc::Receiver<Event>) {
         let ws = Arc::new(Mutex::new(None));
         let url:String = format!("{}/stream?streams=",get_env("STREAM_HOST") ).to_string();
-        let (tx, rx) = mpsc::channel::<Event>(100);
+        let (tx,  rx) = mpsc::channel::<Event>(100);
         (Self { ws,url,event_tx:tx},rx)
     }
-    pub fn  trade(mut self,symbol:&str) -> Self  {
+    pub fn  trade(&mut self,symbol:&str)   {
         self.url.push_str(&format!("{}@trade/", symbol));
-        self
+    
     }
 
-    pub fn kline(mut self,symbol:&str,interval:&str) ->  Self {
+    pub fn kline(&mut self,symbol:&str,interval:&str)    {
         self.url.push_str(&format!("{}@kline_{}/", symbol,interval) );
-        self
+   
     }
 
-    pub async fn start_stream(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+    pub async fn start_stream(&self) -> Result<(), Box<dyn std::error::Error>> {
         println!("{}",&self.url.trim_end_matches('/').to_string() );
         let (ws_stream, _)  = connect_async(&self.url.trim_end_matches('/').to_string() ).await?;
         let mut ws = self.ws.lock().await; 
@@ -84,7 +81,7 @@ impl PublicStream {
 }
 
 #[allow(dead_code)]
-async fn dispatch_event(txt: &str,event_tx: &Sender<Event>) {
+async fn dispatch_event(txt: &str,event_tx: &mpsc::Sender<Event>) {
         
     let parsed: Value = match serde_json::from_str(txt) {
         Ok(v) => v,
@@ -177,10 +174,10 @@ mod tests {
         };
     
         // 2️⃣ สร้าง stream + คืน Receiver สำหรับแต่ละ topic
-        let (mut stream_trade, trade_rx) = PublicStream::new();
+        let (mut  stream_trade, mut trade_rx) = PublicStream::new();
         stream_trade.trade("btcusdt");
 
-        let (mut stream_kline, kline_rx) = PublicStream::new();
+        let (mut  stream_kline, mut kline_rx) = PublicStream::new();
         stream_kline.kline("btcusdt", "1m");
    
         
@@ -193,17 +190,9 @@ mod tests {
             println!("EVENT LOOP START");
             loop {
                 tokio::select! {
-                    let mut trade_res = trade_rx.expect("trade_rx is None");
-                    while trade_res.recv().await => {
-                        println!("TRADE: {:?}", trade);
-                    },
-                    Some(mut kline) = kline_rx.recv().await => {
-                        println!("KLINE: {:?}", kline);
-                    },
-                    else => {
-                        println!("Both channels closed");
-                        break;
-                    }
+                    Some(Event::Trade(t)) = trade_rx.recv() => println!("TRADE: {:?}", t),
+                    Some(Event::Kline(k)) = kline_rx.recv() => println!("KLINE: {:?}", k),
+                    else => break,
                 }
             }
         });
