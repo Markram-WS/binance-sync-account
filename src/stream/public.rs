@@ -10,13 +10,12 @@ use std::sync::Arc;
 type BinanceStream = WebSocketStream<MaybeTlsStream<TcpStream>>;
 
 use super::binance::spot;
-use super::handlers::spot::{trade_handler, order_handler,balance_handler,kline_handler,terminated_handler,account_handler};
-use crate::utils::{self, get_env};
+use crate::utils::{get_env};
 
 pub enum Event {
     Trade(spot::Trade),
     Kline(spot::Kline),
-    Terminated(spot::Terminated),
+    Ticker(spot::Ticker),
 }
 
 #[allow(dead_code)]
@@ -41,6 +40,11 @@ impl PublicStream {
 
     pub fn kline(&mut self,symbol:&str,interval:&str)    {
         self.url.push_str(&format!("{}@kline_{}/", symbol,interval) );
+   
+    }
+
+    pub fn ticker(&mut self,symbol:&str)    {
+        self.url.push_str(&format!("{}@ticker/", symbol) );
    
     }
 
@@ -126,12 +130,12 @@ async fn dispatch_event(txt: &str,event_tx: &mpsc::Sender<Event>) {
                 }
             }
         }
-        Some("eventStreamTerminated") => {
+        Some("24hrTicker") => {
             if let Some(data) = parsed.get("data") {
-                match serde_json::from_value::<spot::Terminated>(data.clone()) {
+                match serde_json::from_value::<spot::Ticker>(data.clone()) {
                     Ok(ev) => {
-                     
-                            let _ = event_tx.send(Event::Terminated(ev)).await; 
+                       
+                            let _ = event_tx.send(Event::Ticker(ev)).await;  
                         
                     }
                     Err(e) => {
@@ -140,7 +144,6 @@ async fn dispatch_event(txt: &str,event_tx: &mpsc::Sender<Event>) {
                 }
             }
         }
-        
         _ => {}
     }
 }
