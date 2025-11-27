@@ -9,7 +9,7 @@ use serde_json::Value;
 use std::sync::Arc;
 type BinanceStream = WebSocketStream<MaybeTlsStream<TcpStream>>;
 
-use super::binance::spot;
+use super::spot;
 use crate::utils::{ get_env};
 
 pub enum Event {

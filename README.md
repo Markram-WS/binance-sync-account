@@ -1,1 +1,1 @@
-# biance-sync-account
+# Universal eXchange Trading Library for Rust
